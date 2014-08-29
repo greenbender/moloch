@@ -61,6 +61,8 @@ static int pathField;
 static int keyField;
 static int valueField;
 static int magicField;
+static int contenttypeField;
+static int contentlengthField;
 static int statuscodeField;
 static int methodField;
 
@@ -659,6 +661,18 @@ static const char *method_strings[] =
         MOLOCH_FIELD_TYPE_STR_HASH,  MOLOCH_FIELD_FLAG_COUNT,
         NULL);
 
+    contenttypeField = moloch_field_define("http", "termfield",
+        "http.contenttype", "Content Type", "http.contenttype-term",
+        "The content type of body determined by Content-Type header",
+        MOLOCH_FIELD_TYPE_STR_HASH,  MOLOCH_FIELD_FLAG_COUNT,
+        NULL);
+
+    contentlengthField = moloch_field_define("http", "integer",
+        "http.contentlength", "Content Length", "http.contentlength",
+        "The content length of body determined by Content-Length header",
+        MOLOCH_FIELD_TYPE_INT_HASH,  MOLOCH_FIELD_FLAG_COUNT,
+        NULL);
+
     statuscodeField = moloch_field_define("http", "integer",
         "http.statuscode", "Status Code", "http.statuscode",
         "Response HTTP numeric status code",
@@ -671,6 +685,8 @@ static const char *method_strings[] =
     moloch_config_add_header(&httpReqHeaders, "x-forwarded-for", xffField);
     moloch_config_add_header(&httpReqHeaders, "user-agent", uaField);
     moloch_config_add_header(&httpReqHeaders, "host", hostField);
+    moloch_config_add_header(&httpResHeaders, "content-type", contenttypeField);
+    moloch_config_add_header(&httpResHeaders, "content-length", contentlengthField);
     moloch_config_load_header("headers-http-request", "http", "Request header ", "http.", "hdrs.hreq-", &httpReqHeaders, 0);
     moloch_config_load_header("headers-http-response", "http", "Response header ", "http.", "hdrs.hres-", &httpResHeaders, 0);
 
