@@ -1,0 +1,6 @@
+*.o
+*.so
+/Makefile
+/config.log
+/config.status
+/thirdparty/
