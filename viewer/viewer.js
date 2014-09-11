@@ -573,7 +573,7 @@ app.get('/settings', checkWebEnabled, function(req, res) {
   var molochClusters = Config.configMap("moloch-clusters");
   if (molochClusters) {
     Object.keys(molochClusters).forEach( function (cluster) {
-      actions.push({name: "Tag &amp; Export to " + molochClusters[cluster].name, value: "forward:" + cluster});
+      actions.push({name: "Tag & Export to " + molochClusters[cluster].name, value: "forward:" + cluster});
     });
   }
 
@@ -2065,7 +2065,7 @@ app.get('/connections.json', function(req, res) {
   Db.healthCache(function(err, h) {health = h;});
   buildConnections(req, res, function (err, nodes, links, total) {
     if (err) {
-      return res.send(err);
+      return res.send({health: health, bsqErr: err.toString()});
     }
     res.send({health: health, nodes: nodes, links: links, iTotalDisplayRecords: total});
   });
@@ -4138,7 +4138,7 @@ app.post('/delete', function(req, res) {
 //////////////////////////////////////////////////////////////////////////////////
 //// Sending/Receive sessions
 //////////////////////////////////////////////////////////////////////////////////
-function sendSession(options, cb) {
+function sendSessionWorker(options, cb) {
   var packetslen = 0;
   var packets = [];
   var packetshdr;
@@ -4155,10 +4155,10 @@ function sendSession(options, cb) {
 
   processSessionId(options.id, true, function(pcap, header) {
     packetshdr = header;
-  }, function (pcap, packet, cb, i) {
+  }, function (pcap, packet, pcb, i) {
     packetslen += packet.length;
     packets[i] = packet;
-    cb(null);
+    pcb(null);
   }, function (err, session) {
     var buffer;
     if (err) {
@@ -4237,6 +4237,8 @@ function sendSession(options, cb) {
   }, undefined, 10);
 }
 
+internals.sendSessionQueue = async.queue(sendSessionWorker, 10);
+
 app.get('/:nodeName/sendSession/:id', checkProxyRequest, function(req, res) {
   noCache(req, res);
   res.statusCode = 200;
@@ -4250,9 +4252,7 @@ app.get('/:nodeName/sendSession/:id', checkProxyRequest, function(req, res) {
     nodeName: req.params.nodeName
   };
 
-  sendSession(options, function(err) {
-    res.end(err);
-  });
+  internals.sendSessionQueue.push(options, res.end);
 });
 
 
@@ -4275,7 +4275,7 @@ function sendSessionsList(req, res, list) {
         nodeName: fields.no
       };
       // Get from our DISK
-      sendSession(options, nextCb);
+      internals.sendSessionQueue.push(options, nextCb);
     },
     function () {
       // Get from remote DISK
@@ -4321,7 +4321,7 @@ function sendSessionsListQL(pOptions, list, nextQLCb) {
       };
       Db.merge(options, pOptions);
       // Get from our DISK
-      sendSession(options, nextCb);
+      internals.sendSessionQueue.push(options, nextCb);
     },
     function () {
       // Get from remote DISK

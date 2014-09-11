@@ -72,6 +72,8 @@ sub showHelp($)
     print "  expire <type> <num>   - Perform daily maintenance and optimize all indices\n";
     print "       type             - Same as rotateIndex in ini file = hourly,daily,weekly,monthly\n";
     print "       num              - number of indexes to keep\n";
+    print "  field disable <exp >  - disable a field from being indexed\n";
+    print "  field enable <exp >   - enable a field from being indexed\n";
     exit 1;
 }
 ################################################################################
@@ -1729,9 +1731,15 @@ sub dbCheck {
     my @parts = split(/\./, $esversion->{version}->{number});
     my $version = int($parts[0]*100*100) + int($parts[1]*100) + int($parts[2]);
 
-    if ($version < 9001) {
-        print("Elasticsearch version 0.90.1 or later is required.\n",
-              "Instructions: https://github.com/aol/moloch/wiki/FAQ#wiki-How_do_I_upgrade_Elastic_Search\n");
+    if ($version < 9012 || ($version >= 10000 && $version < 10100)) {
+        print("Currently using Elasticsearch version ", $esversion->{version}->{number}, " which isn't supported\n",
+              "* 1.2.x or 1.3.x is recommended\n",
+              "* 1.0.x is not supported\n",
+              "* 0.90.12 or later is required\n",
+              "\n",
+              "Instructions: https://github.com/aol/moloch/wiki/FAQ#wiki-How_do_I_upgrade_Elastic_Search\n",
+              "Make sure to restart any viewer or capture after upgrading!\n"
+             );
         exit (1);
 
     }
@@ -1819,8 +1827,9 @@ while (@ARGV > 0 && substr($ARGV[0], 0, 1) eq "-") {
 
 showHelp("Help:") if ($ARGV[1] =~ /^help$/);
 showHelp("Missing arguments") if (@ARGV < 2);
-showHelp("Unknown command '$ARGV[1]'") if ($ARGV[1] !~ /^(init|initnoprompt|info|wipe|upgrade|users-?import|users-?export|expire|rotate|optimize|mv|rm|rm-?missing)$/);
+showHelp("Unknown command '$ARGV[1]'") if ($ARGV[1] !~ /^(init|initnoprompt|info|wipe|upgrade|users-?import|users-?export|expire|rotate|optimize|mv|rm|rm-?missing|field)$/);
 showHelp("Missing arguments") if (@ARGV < 3 && $ARGV[1] =~ /^(users-?import|users-?export|rm|rm-?missing)$/);
+showHelp("Missing arguments") if (@ARGV < 4 && $ARGV[1] =~ /^(field)$/);
 showHelp("Must have both <old fn> and <new fn>") if (@ARGV < 4 && $ARGV[1] =~ /^(mv)$/);
 showHelp("Must have both <type> and <num> arguments") if (@ARGV < 4 && $ARGV[1] =~ /^(rotate|expire)$/);
 
@@ -1984,6 +1993,14 @@ sub printIndex {
             esDelete("/files/file/" . $hit->{_id}, 0);
         }
     }
+    exit 0;
+} elsif ($ARGV[1] =~ /^(field)$/) {
+    my $result = esGet("/fields/field/$ARGV[3]", 1);
+    my $found = $result->{exists} || $result->{found};
+    die "Field $ARGV[3] isn't found" if (!$found);
+
+    esPost("/fields/field/$ARGV[3]/_update", "{\"doc\":{\"disabled\":" . ($ARGV[2] eq "disable"?"true":"false").  "}}");
+    
     exit 0;
 }
 

@@ -49,6 +49,10 @@ void moloch_field_define_json(unsigned char *expression, int expression_len, uns
         } else if (strncmp("dbField", (char*)data + out[i], 7) == 0) {
             info->dbFieldMem = info->dbField = g_strndup((char*)data + out[i+2], out[i+3]);
             info->dbFieldLen = out[i+3];
+        } else if (strncmp("disabled", (char*)data + out[i], 8) == 0) {
+            if (strncmp((char *)data + out[i+2], "true", 4) == 0) {
+                info->flags    |= MOLOCH_FIELD_FLAG_DISABLED;
+            }
         }
     }
 
@@ -286,6 +290,9 @@ gboolean moloch_field_string_add(int pos, MolochSession_t *session, const char *
     MolochStringHashStd_t *hash;
     MolochString_t        *hstring;
 
+    if (config.fields[pos]->flags & MOLOCH_FIELD_FLAG_DISABLED)
+        return FALSE;
+
     if (!session->fields[pos]) {
         field = MOLOCH_TYPE_ALLOC(MolochField_t);
         session->fields[pos] = field;
@@ -364,6 +371,9 @@ gboolean moloch_field_int_add(int pos, MolochSession_t *session, int i)
     MolochField_t        *field;
     MolochIntHashStd_t   *hash;
     MolochInt_t          *hint;
+
+    if (config.fields[pos]->flags & MOLOCH_FIELD_FLAG_DISABLED)
+        return FALSE;
 
     if (!session->fields[pos]) {
         field = MOLOCH_TYPE_ALLOC(MolochField_t);
