@@ -2231,6 +2231,7 @@ if ($ARGV[1] =~ /(init|wipe)/) {
     print "Finished\n";
 } elsif ($main::versionNumber >= 21 && $main::versionNumber <= 21) {
     waitFor("UPGRADE", "do you want to upgrade?");
+    globalsUpdate();
 
     print "Finished\n";
 } else {
