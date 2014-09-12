@@ -849,12 +849,12 @@ sub globalsUpdate
 {
     my $mapping = '
 {
-  query: {
+  global: {
     _all : {enabled : 0},
     _source : {enabled : 1},
     dynamic: "strict",
     properties: {
-      views : {
+      value : {
         type : "object",
         dynamic: "true"
       }
