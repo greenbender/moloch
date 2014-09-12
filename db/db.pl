@@ -27,6 +27,7 @@
 # 18 - fields db
 # 19 - users_v3
 # 20 - queries
+# 21 - globals
 
 use HTTP::Request::Common;
 use LWP::UserAgent;
@@ -35,7 +36,7 @@ use Data::Dumper;
 use POSIX;
 use strict;
 
-my $VERSION = 20;
+my $VERSION = 21;
 my $verbose = 0;
 
 ################################################################################
@@ -825,6 +826,44 @@ sub fieldsUpdate
     esPost("/fields/field/dns.status/_update", '{doc: {type: "uptermfield"}}', 1);
     esPost("/fields/field/http.hasheader/_update", '{doc: {regex: "^http.hasheader\\\\.(?:(?!\\\\.cnt$).)*$"}}', 1);
     esPost("/fields/field/email.subject/_update", '{doc: {type: "textfield"}}', 1);
+}
+
+################################################################################
+sub globalsCreate
+{
+    my $settings = '
+{
+  settings: {
+    number_of_shards: 1,
+    number_of_replicas: 0,
+    auto_expand_replicas: "0-2"
+  }
+}';
+
+    print "Creating globals index\n" if ($verbose > 0);
+    esPut("/globals", $settings);
+    globalsUpdate();
+}
+################################################################################
+sub globalsUpdate
+{
+    my $mapping = '
+{
+  query: {
+    _all : {enabled : 0},
+    _source : {enabled : 1},
+    dynamic: "strict",
+    properties: {
+      views : {
+        type : "object",
+        dynamic: "true"
+      }
+    }
+  }
+}';
+
+    print "Setting globals mapping\n" if ($verbose > 0);
+    esPut("/globals/global/_mapping?pretty&ignore_conflicts=true", $mapping);
 }
 
 ################################################################################
@@ -2081,6 +2120,7 @@ if ($ARGV[1] =~ /(init|wipe)/) {
     if ($ARGV[1] =~ "init") {
         usersCreate();
         queriesCreate();
+        globalsCreate();
     }
     print "Finished.  Have fun!\n";
 } elsif ($main::versionNumber == 0) {
@@ -2114,6 +2154,7 @@ if ($ARGV[1] =~ /(init|wipe)/) {
     esAlias("add", "dstats_v1", "dstats");
 
     queriesCreate();
+    globalsCreate();
 
     print "users_v1 and files_v1 tables can be deleted now\n";
     print "Finished\n";
@@ -2136,6 +2177,7 @@ if ($ARGV[1] =~ /(init|wipe)/) {
     dstatsUpdate();
     fieldsCreate();
     queriesCreate();
+    globalsCreate();
 
     print "Finished\n";
 } elsif ($main::versionNumber >= 7 && $main::versionNumber < 18) {
@@ -2154,6 +2196,7 @@ if ($ARGV[1] =~ /(init|wipe)/) {
     dstatsUpdate();
     fieldsCreate();
     queriesCreate();
+    globalsCreate();
 
     print "Finished\n";
 } elsif ($main::versionNumber >= 18 && $main::versionNumber < 19) {
@@ -2169,18 +2212,25 @@ if ($ARGV[1] =~ /(init|wipe)/) {
     fieldsUpdate();
     sessionsUpdate();
     queriesCreate();
+    globalsCreate();
 
     print "Finished\n";
 } elsif ($main::versionNumber >= 19 && $main::versionNumber < 20) {
     waitFor("UPGRADE", "do you want to upgrade?");
     sessionsUpdate();
     queriesCreate();
+    globalsCreate();
 
     print "Finished\n";
-} elsif ($main::versionNumber >= 20 && $main::versionNumber <= 20) {
+} elsif ($main::versionNumber >= 20 && $main::versionNumber < 21) {
     waitFor("UPGRADE", "do you want to upgrade?");
     sessionsUpdate();
     queriesUpdate();
+    globalsCreate();
+
+    print "Finished\n";
+} elsif ($main::versionNumber >= 21 && $main::versionNumber <= 21) {
+    waitFor("UPGRADE", "do you want to upgrade?");
 
     print "Finished\n";
 } else {
