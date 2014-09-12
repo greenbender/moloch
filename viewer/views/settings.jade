@@ -52,7 +52,38 @@ block content
     br
     label(for='connDstField') Default Dst Field:
     +fieldsSelect("connDstField", "setting", true, [{dbField: "ip.dst:port", exp: "ip.dst:port"}])
-  p
+  if (user.createEnabled)
+    hr
+    h2 Global Views
+    p Saved global views provide an easier method to specify common base queries and can be activated in the navigation header.
+    if (globals && globals.views)
+      h3 Current Global Views
+      table#globalViews(cellpadding="0",cellspacing="0",border="0",class="display",style="table { clear: both }")
+        thead
+          tr
+            th.viewName(style="width:150px") Name
+            th.viewExpression Expression
+            th.viewAction(style="width:50px") Action
+        tbody
+          - var keys = Object.keys(globals.views).sort()
+          each key in keys
+            tr
+              td #{key}
+              td(contentEditable) #{globals.views[key].expression}
+              td
+                a.deleteGlobalViewAction(href="#") delete
+    br
+    h3 New Global View
+    form#createGlobalViewForm
+      input(type='hidden', id='token', name='token', value='#{token}')
+      label(for='viewName') View Name:
+      input(id='viewName', name='viewName', size='30', maxlength='20')
+      br
+      label(for='viewExpression') Expression:
+      input(id='viewExpression', name='viewExpression', size='100')
+      br
+      center
+        button#createGlobalView Create View
   hr
   h2 Views
   p Saved views provide an easier method to specify common base queries and can be activated in the navigation header.
@@ -68,7 +99,7 @@ block content
         - var keys = Object.keys(suser.views).sort()
         each key in keys
           tr
-            td(contentEditable) #{key}
+            td #{key}
             td(contentEditable) #{suser.views[key].expression}
             td
               a.deleteViewAction(href="#") delete
@@ -190,6 +221,21 @@ block content
         }
       });
 
+      $('#globalViews').dataTable({
+        oLanguage: {
+          "sLengthMenu": "_MENU_"
+        },
+        sDom: '<"fg-toolbar ui-widget-header ui-helper-clearfix"lipfr>t',
+        aoColumns: [
+        null,
+        null,
+        {
+          bSearchable: false,
+          bSortable: false
+        }
+        ]
+      });
+
       $('#views').dataTable({
         oLanguage: {
           "sLengthMenu": "_MENU_"
@@ -266,6 +312,23 @@ block content
       });
     });
 
+    $('#createGlobalViewForm').submit(function() {
+      $.ajax( {
+        "dataType": 'json',
+        "type": "POST",
+        "url": "#{basePath}updateGlobalView",
+        "data": $("#createGlobalViewForm").serialize(),
+        "success": function(data) {
+          if (!data.success) {
+            alert(data.text);
+          } else {
+            location.reload();
+          }
+        }
+      });
+      return false;
+    });
+
     $('#createViewForm').submit(function() {
       $.ajax( {
         "dataType": 'json',
@@ -298,6 +361,41 @@ block content
         }
       });
       return false;
+    });
+
+    $(document).on('click', '.deleteGlobalViewAction', function (e) {
+      $.ajax( {
+        "dataType": 'json',
+        "type": "POST",
+        "url": "#{basePath}deleteGlobalView",
+        "data": [{name: "view", value: $(this).closest("tr").find("td:first").text()},
+                 {name: "token", value: "#{token}"}],
+        "success": function(data) {
+          if (!data.success) {
+            alert(data.text);
+          } else {
+            location.reload();
+          }
+        }
+      });
+      return false;
+    });
+
+    $(document).on('focusout', '#globalViews td[contentEditable]', function () {
+      var row = $(this).closest("tr");
+      $.ajax( {
+        "dataType": 'json',
+        "type": "POST",
+        "url": "#{basePath}updateGlobalView",
+        "data": [{name: "viewName", value: row.find("td:first").text()},
+                 {name: "viewExpression", value: row.find("td:eq(1)").text()},
+                 {name: "token", value: "#{token}"}],
+        "success": function(data) {
+          if (!data.success) {
+            alert(data.text);
+          }
+        }
+      });
     });
 
     $(document).on('click', '.deleteViewAction', function (e) {

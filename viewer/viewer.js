@@ -579,13 +579,37 @@ app.get('/settings', checkWebEnabled, function(req, res) {
 
   function render(user, cp) {
     if (user.settings === undefined) {user.settings = {};}
-    Db.search("queries", "query", {size:1000, query: {term: {creator: user.userId}}}, function (err, data) {
-      if (data && data.hits && data.hits.hits) {
-        user.queries = {};
-        data.hits.hits.forEach(function(item) {
-          user.queries[item._id] = item._source;
+
+    async.parallel({
+      "queries": function(callback) {
+        Db.search("queries", "query", {size:1000, query: {term: {creator: user.userId}}}, function(err, data) {
+          if (data && data.hits && data.hits.hits)
+            return callback(null, data.hits.hits);
+          return callback(null, []);
+        });
+      },
+      "globals": function(callback) {
+        if (!req.user.createEnabled)
+            return callback(null, []);
+        Db.search("globals", "global", {size:1000}, function(err, data) {
+          if (data && data.hits && data.hits.hits)
+            return callback(null, data.hits.hits);
+          return callback(null, []);
         });
       }
+    },
+    function(err, results) {
+
+      user.queries = {};
+      results.queries.forEach(function(item) {
+        user.queries[item._id] = item._source;
+      });
+
+      var globals = {};
+      results.globals.forEach(function(item) {
+        globals[item._id] = item._source.value;
+      });
+
       actions = actions.sort();
 
       res.render('settings', {
@@ -595,7 +619,8 @@ app.get('/settings', checkWebEnabled, function(req, res) {
         token: Config.obj2auth({date: Date.now(), pid: process.pid, userId: req.user.userId, suserId: user.userId, cp:cp}),
         title: makeTitle(req, 'Settings'),
         titleLink: 'settingsLink',
-        actions: actions
+        actions: actions,
+        globals: globals
       });
     });
   }
@@ -702,7 +727,7 @@ function expireDevice (nodes, dirs, minFreeSpaceG, nextCb) {
         }
 
         var fields = item._source || item.fields;
-         
+
         var freeG;
         try {
           var stat = fs.statVFS(fields.name);
@@ -2549,18 +2574,18 @@ function toHex(input, offsets) {
 // Modified version of https://gist.github.com/penguinboy/762197
 function flattenObject1 (obj) {
   var toReturn = {};
-  
+
   for (var i in obj) {
     if (!obj.hasOwnProperty(i)) {
       continue;
     }
-    
+
     if ((typeof obj[i]) === 'object' && !Array.isArray(obj[i])) {
       for (var x in obj[i]) {
         if (!obj[i].hasOwnProperty(x)) {
           continue;
         }
-        
+
         toReturn[i + '.' + x] = obj[i][x];
       }
     } else {
@@ -3645,6 +3670,71 @@ app.post('/changeSettings', checkToken, function(req, res) {
   });
 });
 
+app.post('/updateGlobalView', checkToken, function(req, res) {
+  function error(text) {
+    return res.send(JSON.stringify({success: false, text: text}));
+  }
+
+  if (!req.user.createEnabled) {
+    return res.send(JSON.stringify({success: false, text: "Need admin privileges"}));
+  }
+
+  if (!req.body.viewName || !req.body.viewExpression) {
+    return error("Missing viewName or viewExpression");
+  }
+
+  req.body.viewName = req.body.viewName.replace(/[^-a-zA-Z0-9_: ]/g, "");
+
+  Db.get("globals", "global", "views", function(err, value) {
+
+    var views = value._source.value;
+    if (err || !value.found) {
+      views = {};
+    }
+
+    views[req.body.viewName] = {"expression": req.body.viewExpression};
+    Db.indexNow("globals", "global", "views", {"value": views}, function(err, info) {
+      if (err) {
+        console.log("updateGlobalView error", err, info);
+        return error("Global View update failed");
+      }
+      return res.send(JSON.stringify({success: true, text: "Updated global view successfully"}));
+    });
+  });
+});
+
+app.post('/deleteGlobalView', checkToken, function(req, res) {
+  function error(text) {
+    return res.send(JSON.stringify({success: false, text: text}));
+  }
+
+  if (!req.user.createEnabled) {
+    return res.send(JSON.stringify({success: false, text: "Need admin privileges"}));
+  }
+
+  if (!req.body.view) {
+    return error("Missing view");
+  }
+
+  Db.get("globals", "global", "views", function(err, value) {
+    if (err || !value.found) {
+      console.log("deleteGlobalView failed", err, value);
+      return error("Unknown global");
+    }
+
+    views = value._source.value;
+    delete views[req.body.view];
+
+    Db.indexNow("globals", "global", "views", {"value": views}, function(err, info) {
+      if (err) {
+        console.log("deleteGlobalView error", err, info);
+        return error("Global View update failed");
+      }
+      return res.send(JSON.stringify({success: true, text: "Deleted global view successfully"}));
+    });
+  });
+});
+
 app.post('/updateView', checkToken, function(req, res) {
   function error(text) {
     return res.send(JSON.stringify({success: false, text: text}));
@@ -3750,7 +3840,7 @@ app.post('/updateCronQuery', checkToken, function(req, res) {
       return res.send(JSON.stringify({success: true, text: "Success"}));
     });
     return;
-  } 
+  }
 
   Db.get("queries", 'query', req.body.key, function(err, sq) {
     if (err || !sq.found) {
@@ -4626,7 +4716,7 @@ function processCronQueries() {
       if (cq.action.indexOf("forward:") === 0) {
         cluster = cq.action.substring(8);
       }
-      
+
       Db.getUser(cq.creator, function(err, user) {
         if (err && !user) {return callback();}
         if (!user || !user.found) {console.log("User", cq.creator, "doesn't exist"); return callback(null);}
