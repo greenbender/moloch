@@ -916,7 +916,7 @@ $(document).ready(function() {
     $('#searchForm').submit();
   });
 
-  if (sessionStorage['moloch-view'] && molochViews[sessionStorage['moloch-view']]) {
+  if (sessionStorage['moloch-view'] && (molochViews[sessionStorage['moloch-view']] || molochGlobalViews[sessionStorage['moloch-view']])) {
     $("#viewsButton label").text("View: "+ sessionStorage['moloch-view'] + " ")
                            .addClass("red");
   } else {

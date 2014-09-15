@@ -219,6 +219,19 @@ app.configure(function() {
     });
   }
 
+  // globals
+  app.use(function(req, res, next) {
+    Db.search("globals", "global", {size:1000}, function(err, data) {
+      req.globals = {};
+      if (data && data.hits && data.hits.hits) {
+        data.hits.hits.forEach(function(item) {
+          req.globals[item._id] = item._source;
+        });
+      }
+      return next();
+    });
+  });
+
   express.logger.token('username', function(req, res){ return req.user?req.user.userId:"-"; });
 });
 
@@ -496,6 +509,7 @@ function makeTitle(req, page) {
 app.get("/", checkWebEnabled, function(req, res) {
   res.render('index', {
     user: req.user,
+    globals: req.globals,
     title: makeTitle(req, 'Sessions'),
     titleLink: 'sessionsLink',
     isIndex: true
@@ -505,6 +519,7 @@ app.get("/", checkWebEnabled, function(req, res) {
 app.get("/spiview", checkWebEnabled, function(req, res) {
   res.render('spiview', {
     user: req.user,
+    globals: req.globals,
     title: makeTitle(req, 'SPI View'),
     titleLink: 'spiLink',
     isIndex: true,
@@ -518,6 +533,7 @@ app.get("/spiview", checkWebEnabled, function(req, res) {
 app.get("/spigraph", checkWebEnabled, function(req, res) {
   res.render('spigraph', {
     user: req.user,
+    globals: req.globals,
     title: makeTitle(req, 'SPI Graph'),
     titleLink: 'spigraphLink',
     isIndex: true
@@ -527,6 +543,7 @@ app.get("/spigraph", checkWebEnabled, function(req, res) {
 app.get("/connections", checkWebEnabled, function(req, res) {
   res.render('connections', {
     user: req.user,
+    globals: req.globals,
     title: makeTitle(req, 'Connections'),
     titleLink: 'connectionsLink',
     isIndex: true
@@ -580,47 +597,25 @@ app.get('/settings', checkWebEnabled, function(req, res) {
   function render(user, cp) {
     if (user.settings === undefined) {user.settings = {};}
 
-    async.parallel({
-      "queries": function(callback) {
-        Db.search("queries", "query", {size:1000, query: {term: {creator: user.userId}}}, function(err, data) {
-          if (data && data.hits && data.hits.hits)
-            return callback(null, data.hits.hits);
-          return callback(null, []);
-        });
-      },
-      "globals": function(callback) {
-        if (!req.user.createEnabled)
-            return callback(null, []);
-        Db.search("globals", "global", {size:1000}, function(err, data) {
-          if (data && data.hits && data.hits.hits)
-            return callback(null, data.hits.hits);
-          return callback(null, []);
+    Db.search("queries", "query", {size:1000, query: {term: {creator: user.userId}}}, function(err, data) {
+      user.queries = {};
+      if (data && data.hits && data.hits.hits) {
+        data.hits.hits.forEach(function (item) {
+          user.queries[item._id] = item._source;
         });
       }
-    },
-    function(err, results) {
-
-      user.queries = {};
-      results.queries.forEach(function(item) {
-        user.queries[item._id] = item._source;
-      });
-
-      var globals = {};
-      results.globals.forEach(function(item) {
-        globals[item._id] = item._source.value;
-      });
 
       actions = actions.sort();
 
       res.render('settings', {
         user: req.user,
+        globals: req.globals,
         suser: user,
         currentPassword: cp,
         token: Config.obj2auth({date: Date.now(), pid: process.pid, userId: req.user.userId, suserId: user.userId, cp:cp}),
         title: makeTitle(req, 'Settings'),
         titleLink: 'settingsLink',
-        actions: actions,
-        globals: globals
+        actions: actions
       });
     });
   }
@@ -1048,17 +1043,26 @@ function buildSessionQuery(req, buildCb) {
     }
   }
 
-  if (!err && req.query.view && req.user.views && req.user.views[req.query.view]) {
-    try {
-      var viewExpression = molochparser.parse(req.user.views[req.query.view].expression);
-      if (query.query.filtered.filter === undefined) {
-        query.query.filtered.filter = viewExpression;
-      } else {
-        query.query.filtered.filter = {bool: {must: [viewExpression, query.query.filtered.filter]}};
+  if (!err && req.query.view) {
+
+    var view = null;
+    if (req.user.views && req.user.views[req.query.view])
+      view = req.user.views[req.query.view];
+    else if (req.globals && req.globals.views && req.globals.views[req.query.view])
+      view = req.globals.views[req.query.view];
+
+    if (view) {
+      try {
+        var viewExpression = molochparser.parse(view.expression);
+        if (query.query.filtered.filter === undefined) {
+          query.query.filtered.filter = viewExpression;
+        } else {
+          query.query.filtered.filter = {bool: {must: [viewExpression, query.query.filtered.filter]}};
+        }
+      } catch (e) {
+        console.log("ERR - User expression doesn't compile", req.user.views[req.query.view], e);
+        err = e;
       }
-    } catch (e) {
-      console.log("ERR - User expression doesn't compile", req.user.views[req.query.view], e);
-      err = e;
     }
   }
 
@@ -3685,19 +3689,20 @@ app.post('/updateGlobalView', checkToken, function(req, res) {
 
   req.body.viewName = req.body.viewName.replace(/[^-a-zA-Z0-9_: ]/g, "");
 
-  Db.get("globals", "global", "views", function(err, value) {
+  Db.get("globals", "global", "views", function(err, views) {
 
-    var views = value._source.value;
-    if (err || !value.found) {
+    if (err)
       views = {};
-    }
+    else
+      views = views._source;
 
     views[req.body.viewName] = {"expression": req.body.viewExpression};
-    Db.indexNow("globals", "global", "views", {"value": views}, function(err, info) {
+    Db.indexNow("globals", "global", "views", views, function(err, info) {
       if (err) {
         console.log("updateGlobalView error", err, info);
         return error("Global View update failed");
       }
+      req.globals.views = views;
       return res.send(JSON.stringify({success: true, text: "Updated global view successfully"}));
     });
   });
@@ -3716,20 +3721,21 @@ app.post('/deleteGlobalView', checkToken, function(req, res) {
     return error("Missing view");
   }
 
-  Db.get("globals", "global", "views", function(err, value) {
-    if (err || !value.found) {
+  Db.get("globals", "global", "views", function(err, views) {
+    if (err) {
       console.log("deleteGlobalView failed", err, value);
       return error("Unknown global");
     }
 
-    views = value._source.value;
+    views = views._source;
     delete views[req.body.view];
 
-    Db.indexNow("globals", "global", "views", {"value": views}, function(err, info) {
+    Db.indexNow("globals", "global", "views", views, function(err, info) {
       if (err) {
         console.log("deleteGlobalView error", err, info);
         return error("Global View update failed");
       }
+      req.globals.views = views;
       return res.send(JSON.stringify({success: true, text: "Deleted global view successfully"}));
     });
   });
@@ -3775,6 +3781,8 @@ app.post('/updateView', checkToken, function(req, res) {
         console.log("updateView error", err, info);
         return error("Create View update failed");
       }
+      if (req.user.userId == user.userId)
+        req.user.views = user.views;
       return res.send(JSON.stringify({success: true, text: "Updated view successfully"}));
     });
   });
@@ -3804,6 +3812,8 @@ app.post('/deleteView', checkToken, function(req, res) {
         console.log("deleteView error", err, info);
         return error("Create View update failed");
       }
+      if (req.user.userId == user.userId)
+        req.user.views = user.views;
       return res.send(JSON.stringify({success: true, text: "Deleted view successfully"}));
     });
   });

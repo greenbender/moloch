@@ -177,15 +177,22 @@ html
             each key in Object.keys(molochClusters)
               li
                 a.sessionSendSessionButton.sendSessionAction(cluster=key) Send Session to #{molochClusters[key].name}
-      if (user.views)
+      - if (globals.views || user.views)
         div#viewsMenu
           ul
             li.viewMenuOption
               a.viewMenuOption None
-            - var keys = Object.keys(user.views).sort()
-            each key in keys
-              li
-                a.viewMenuOption(exp=user.views[key].expression) #{key}
+            - if (globals.views)
+              - var keys = Object.keys(globals.views).sort()
+              each key in keys
+                li
+                  a.viewMenuOption(exp=globals.views[key].expression) #{key}
+            - if (user.views)
+              - var keys = Object.keys(user.views).sort()
+              each key in keys
+                li
+                  a.viewMenuOption(exp=user.views[key].expression) #{key}
+
 
 script(type='text/javascript').
   var molochTitle = "#{title}";
@@ -193,6 +200,7 @@ script(type='text/javascript').
   var molochFieldsExp = Object.keys(molochFields);
   var molochSettings  = !{JSON.stringify(user.settings)};
   var molochViews  = !{JSON.stringify(user.views || {})};
+  var molochGlobalViews = !{JSON.stringify(globals.views || {})};
   function loadHealth() {
     $.get('#{basePath}eshealth.json', function(data) {
       updateHealth(data);
