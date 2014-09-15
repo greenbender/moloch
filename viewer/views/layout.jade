@@ -29,7 +29,7 @@ html
             img(src='header_logo.png', style="border-style:none")
         div#nav-right
           ul
-            - if (isIndex && user.views)
+            - if (isIndex && (user.views || globals.views))
               li#viewsButton
                 label
                 img#viewsArrow(src="down-arrow.png")
